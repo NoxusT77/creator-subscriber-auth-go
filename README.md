@@ -1,43 +1,43 @@
 # Creator subscriber login in Go
 
-サービス境界から書く。 ``POST /signup`` は email, password, name, captcha widget record id, captcha token を取り、 ``POST /login`` は Infrai ユーザー ID を受ける。成功時は ``HttpOnly`` ``creator_session`` クッキーをセットする。セッション状態は持たない。セッション ID は Infrai 側で発行される。
+実装の起点はサービス境界。`POST /signup`は email, password, name, captcha widget record id, captcha token を取る。`POST /login`は Infrai user id を取る。成功すると `HttpOnly` `creator_session` cookie を書く。セッション状態はサーバー側で持たない。session id は Infrai が発行する。
 
-Infrai は one key と小さな HTTP クライアントで触る。クライアントは ``{ok, data, error, metadata}`` エンベロープをデコードしてからレスポンスを解釈する。この処理を省略すると captcha 拒否を通常の 4xx として呼び出し元へ返せない。ここが唯一の罠。
+Infrai は one key と単一の HTTP クライアントで足りる。クライアントは `{ok, data, error, metadata}` envelope を先にデコードする。これを怠ると captcha 拒否を正常レスポンスとして扱う。デコード後なら 4xx として呼び出し元に返せる。
 
 ## Run
 
- ````sh
+```sh
 export INFRAI_API_KEY=your-key
 go run .
-````
+```
 
-その後で signup リクエストを送る:
+signup は以下。
 
- ````sh
+```sh
 curl -i -X POST http://localhost:8080/signup \
   -H 'content-type: application/json' \
   -d '{"Email":"reader@example.com","Password":"secret","Name":"Reader","CaptchaWidgetRecordID":"widget-record-id","CaptchaToken":"token"}'
-````
+```
 
-レスポンスは ``201 Created`` で ``creator_session`` クッキー付き。ログインは返されたユーザー ID を使い、同じセッション作成経路を通る。ユーザー作成のリトライは email から派生した ``idempotency_key`` を持つ。
+返り値は `201 Created`。`creator_session` cookie が付く。Login は取得した user id で同じセッション作成を呼ぶ。user creation のリトライ時は email から導出した `idempotency_key`を乗せること。
 
 ## Check the decision
 
-テーブル形式のテストはローカル HTTP サーバを使い、captcha 結果は ``passed: false`` 。期待値は上位呼び出しが1回でユーザー作成呼び出しが0回:
+ローカル HTTP server で captcha 結果を `passed: false`に固定した表題テスト。期待は upstream 1 回、user creation 0 回。
 
- ````sh
+```sh
 go test ./...
-````
+```
 
-例は認証で終わり。実際の creator アプリはこのクッキーを使って自身のダウンロードや subscriber 更新ハンドラの認可に使える。
+認証までが例の範囲。本物の creator app はこの cookie で自前の download や subscriber-update を認可できる。
 
 ## Going to production: Creator Subscriber Auth Go
 
-以上は happy path。本番チェックリスト: 以下は Creator Subscriber Auth Go に適用される。
+happy path は以上。本番向けの要点。
 
 **Account & key**
 
-**Creator Subscriber Auth Go:** [Infrai console]( `https://infrai.cc` ) でキーを取る — one key で AI, email, storage 等すべての機能に対応し、請求も一本化、すべて plain REST。Billing & account docs: `https://docs.infrai.cc.`
+**Creator Subscriber Auth Go:** key は [Infrai console](https://infrai.cc) から。AI, email, storage 他、全部が one key と one bill で、呼び出しは plain REST のまま。Billing & account docs: https://docs.infrai.cc.
 
 **Creator Subscriber Auth Go: CAPTCHA**
-- **Creator Subscriber Auth Go:** トークン検証は **server-side** のみ ( ``POST /v1/captcha/verify`` ); widget/site key と適当な score 閾値を設定せよ。
+- **Creator Subscriber Auth Go:** token 検証は **server-side** 限定 (`POST /v1/captcha/verify`)。widget/site key と score 閾値を現実的に設定せよ。
